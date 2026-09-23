@@ -1,29 +1,40 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: image-to-pdf
+  name: pdf
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: image-to-pdf
-  namespace: image-to-pdf
+  name: pdf
+  namespace: pdf
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: image-to-pdf
+      app: pdf
   template:
     metadata:
       labels:
-        app: image-to-pdf
+        app: pdf
     spec:
       containers:
-        - name: image-to-pdf
-          image: image-to-pdf:local
+        - name: pdf
+          image: pdf:local
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
+          env:
+            - name: AUTH_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: pdf-auth-secrets
+                  key: username
+            - name: AUTH_PASSWORD_HASH
+              valueFrom:
+                secretKeyRef:
+                  name: pdf-auth-secrets
+                  key: password-hash
           readinessProbe:
             httpGet:
               path: /health
@@ -43,12 +54,12 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: image-to-pdf
-  namespace: image-to-pdf
+  name: pdf
+  namespace: pdf
 spec:
   type: ClusterIP
   selector:
-    app: image-to-pdf
+    app: pdf
   ports:
     - port: 8000
       targetPort: 8000
@@ -56,8 +67,8 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: image-to-pdf
-  namespace: image-to-pdf
+  name: pdf
+  namespace: pdf
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-clusterissuer
     nginx.ingress.kubernetes.io/proxy-body-size: 100m
@@ -65,16 +76,16 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - image-to-pdf.diegofnunesbr.com
-      secretName: image-to-pdf-tls
+        - pdf.diegofnunesbr.com
+      secretName: pdf-tls
   rules:
-    - host: image-to-pdf.diegofnunesbr.com
+    - host: pdf.diegofnunesbr.com
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: image-to-pdf
+                name: pdf
                 port:
                   number: 8000

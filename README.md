@@ -1,28 +1,33 @@
-# Image to PDF
+# pdf
 
 Aplicação web para converter imagens em PDF, com suporte a:
 
-- múltiplas imagens
-- reordenação
-- A4 / Original
-- margens
-- qualidade máxima (sem perda)
-- arquivo menor
-- limite de 10 MB por imagem
+- múltiplas imagens (até 10), com reordenação arrastando as miniaturas
+- página A4 (com margem configurável) ou tamanho original
+- qualidade máxima (sem perda), equilibrada ou arquivo mínimo
+- mesclar tudo em um PDF (`imagens_para_pdf.pdf`) ou um PDF por imagem
+  (com o nome original da imagem)
+- limite de 10 MB por imagem e 100 MB no total
+
+Acesso protegido por login (usuário e senha), mesma tela do `ia`, sem TOTP.
 
 ## Estrutura do repositório
 
 ```text
-image-to-pdf/
+pdf/
 ├── app/
 │   ├── main.py
 │   ├── converter.py
 │   └── templates/
-│       └── index.html
+│       ├── index.html
+│       └── login.html
 ├── applications/
-│   └── argocd.image-to-pdf.yaml   # Application do Argo CD
-├── image-to-pdf.yaml              # Namespace, Deployment, Service, Ingress
+│   └── argocd.pdf.yaml            # Application do Argo CD
+├── k8s/
+│   ├── pdf.yaml                   # Namespace, Deployment, Service, Ingress
+│   └── pdf-auth-secrets.sealed.yaml  # usuário + hash da senha (selado)
 ├── build.sh                       # builda a imagem e importa no containerd do k0s
+├── change-password.sh             # define/troca o usuário e a senha de login
 ├── Dockerfile
 ├── requirements.txt
 └── README.md
@@ -30,45 +35,69 @@ image-to-pdf/
 
 ## Rodando no cluster (homelab)
 
-Pré-requisitos: ArgoCD, `ingress-nginx` e `cert-manager` instalados
-(repositórios de mesmo nome) e DNS `image-to-pdf.diegofnunesbr.com`
+Pré-requisitos: ArgoCD, Sealed Secrets, `ingress-nginx` e `cert-manager`
+instalados (repositórios de mesmo nome) e DNS `pdf.diegofnunesbr.com`
 apontando pro node (repositório `dns`).
 
 Na `vm-ubuntu` (é lá que o `docker build` e o `k0s ctr` precisam rodar):
 
 ```bash
-git clone https://github.com/diegofnunesbr/image-to-pdf.git
-cd image-to-pdf
+git clone https://github.com/diegofnunesbr/pdf.git
+cd pdf
 ./build.sh
-kubectl apply -f applications/argocd.image-to-pdf.yaml
+kubectl apply -f applications/argocd.pdf.yaml
 ```
 
-Acesse `https://image-to-pdf.diegofnunesbr.com`. O `Ingress` já libera
-upload de até 100 MB (`proxy-body-size`), igual ao `MAX_TOTAL_MB` padrão -
-se mudar um, mude o outro.
+Acesse `https://pdf.diegofnunesbr.com`. O `Ingress` já libera upload de
+até 100 MB (`proxy-body-size`), igual ao `MAX_TOTAL_MB` padrão - se mudar
+um, mude o outro.
 
 **Lembrete:** a Application aponta pro GitHub, não pro clone local -
-mudança em `image-to-pdf.yaml` só tem efeito depois de `git push`. Imagem
-nova (mesma tag `local`) não é detectada pelo Argo CD: depois do
-`./build.sh`, rode `kubectl -n image-to-pdf rollout restart deployment/image-to-pdf`.
+mudança em `k8s/` só tem efeito depois de `git push`. Imagem nova (mesma
+tag `local`) não é detectada pelo Argo CD: depois do `./build.sh`, rode
+`kubectl -n pdf rollout restart deployment/pdf`.
+
+## Login
+
+Usuário e hash bcrypt da senha ficam em `k8s/pdf-auth-secrets.sealed.yaml`,
+aplicado pelo Argo CD. Pra definir (primeira vez, ou num cluster novo com
+outra chave do Sealed Secrets) ou trocar a senha, rode do seu clone
+(precisa de `htpasswd`, `kubeseal` e `ssh` pra `vm-ubuntu`):
+
+```bash
+./change-password.sh
+```
+
+Pede usuário e senha (sem ecoar), sela, faz commit + push, espera o Argo CD
+sincronizar e reinicia o pod. A sessão dura 30 dias; reiniciar o pod
+desloga (as sessões ficam em memória). Link "Sair" no canto do cabeçalho.
 
 ## Rodando fora do cluster
 
-Acesse: http://localhost:8000
-
-## Como rodar localmente
+O app não sobe sem `AUTH_USERNAME` e `AUTH_PASSWORD_HASH`. Gere um hash
+(`printf '%s' 'senha' | htpasswd -niBC 10 "" | tr -d ':\n' | sed 's/^\$2y/\$2b/'`)
+e:
 
 ```bash
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+AUTH_USERNAME=eu AUTH_PASSWORD_HASH='<hash>' uvicorn app.main:app --reload
+```
+
+Acesse `http://localhost:8000`.
+
+Com Docker:
+
+```bash
+docker build -t pdf .
+docker run -d -p 8000:8000 --restart unless-stopped --name pdf \
+  -e AUTH_USERNAME=eu -e AUTH_PASSWORD_HASH='<hash>' pdf
+docker logs -f pdf
+docker rm -f pdf
 ```
 
 ## Tecnologias
 
-- Python
-- FastAPI
-- Pillow
-- img2pdf
+- Python, FastAPI, Pillow, img2pdf, reportlab, bcrypt
 - HTML / CSS / JS
 - Docker
 
@@ -81,28 +110,8 @@ uvicorn app.main:app --reload
 
 | Variável | Padrão | Descrição |
 |----------|--------|-----------|
+| `AUTH_USERNAME` | - | Usuário de login (**obrigatório**) |
+| `AUTH_PASSWORD_HASH` | - | Hash bcrypt da senha (**obrigatório**) |
 | `MAX_FILE_SIZE_MB` | 10 | Tamanho máximo por imagem (MB) |
 | `MAX_TOTAL_MB` | 100 | Tamanho total máximo (MB) |
 | `A4_MAX_MARGIN_MM` | 100 | Margem máxima para A4 (mm) |
-
-## Como rodar com Docker
-
-```bash
-docker build -t image-to-pdf .
-docker run -d -p 8000:8000 \
-  --restart unless-stopped \
-  --name image-to-pdf \
-  image-to-pdf
-```
-
-## Consultar os logs
-
-```bash
-docker logs -f image-to-pdf
-```
-
-## Parar e remover o container
-
-```bash
-docker rm -f image-to-pdf
-```

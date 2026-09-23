@@ -19,6 +19,13 @@ header{
 background:var(--red);
 color:#fff;
 padding:16px 24px;
+display:flex;
+justify-content:space-between;
+align-items:center;
+}
+header .logout{
+font-weight:normal;
+font-size:14px;
 }
 header a{
 color:#fff;
@@ -123,7 +130,7 @@ font-size:14px;
 
 <body>
 
-<header><a href="/" onclick="resetAll()">Imagem para PDF</a></header>
+<header><a href="/" onclick="resetAll()">Imagem para PDF</a><a class="logout" href="/logout">Sair</a></header>
 
 <main>
 <div class="card">
@@ -353,6 +360,8 @@ try{
 
 const res=await fetch("/convert",{method:"POST",body:fd})
 
+if(res.status===401){location.href="/login";return}
+
 if(!res.ok){
 let msg="Erro ao converter"
 try{const json=await res.json();if(json.detail)msg=Array.isArray(json.detail)?json.detail.map(d=>d.msg||d).join(", "):String(json.detail)}catch{}
@@ -418,6 +427,8 @@ progressText.textContent=`Enviando... ${percent}%`
 }
 
 xhr.onload=async ()=>{
+
+if(xhr.status===401){location.href="/login";return}
 
 if(xhr.status!==200){
 

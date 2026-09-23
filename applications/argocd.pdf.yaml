@@ -1,19 +1,17 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: image-to-pdf
+  name: pdf
   namespace: argocd
 spec:
   project: default
   source:
-    repoURL: https://github.com/diegofnunesbr/image-to-pdf.git
+    repoURL: https://github.com/diegofnunesbr/pdf.git
     targetRevision: main
-    path: .
-    directory:
-      include: image-to-pdf.yaml
+    path: k8s
   destination:
     server: https://kubernetes.default.svc
-    namespace: image-to-pdf
+    namespace: pdf
   syncPolicy:
     automated:
       prune: true

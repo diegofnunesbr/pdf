@@ -1,10 +1,13 @@
 import logging
 import os
+import secrets
 import threading
+import time
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse, Response
+import bcrypt
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from app.converter import images_to_pdf
 
@@ -37,6 +40,90 @@ stats = {"conversions": 0, "images": 0}
 _stats_lock = threading.Lock()
 
 _INDEX_HTML_PATH = Path(__file__).parent / "templates" / "index.html"
+_LOGIN_HTML_PATH = Path(__file__).parent / "templates" / "login.html"
+
+AUTH_USERNAME = os.environ.get("AUTH_USERNAME")
+AUTH_PASSWORD_HASH = os.environ.get("AUTH_PASSWORD_HASH")
+if not AUTH_USERNAME or not AUTH_PASSWORD_HASH:
+    raise RuntimeError("AUTH_USERNAME e AUTH_PASSWORD_HASH precisam estar definidos")
+
+SESSION_COOKIE = "pdf_session"
+SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
+PUBLIC_PATHS = {"/health", "/login", "/favicon.ico"}
+
+_sessions: dict[str, float] = {}
+_sessions_lock = threading.Lock()
+
+
+def _valid_session(token: str | None) -> bool:
+    if not token:
+        return False
+    with _sessions_lock:
+        expires_at = _sessions.get(token)
+        if expires_at is None:
+            return False
+        if expires_at < time.time():
+            del _sessions[token]
+            return False
+        return True
+
+
+def _check_credentials(username: str, password: str) -> bool:
+    user_ok = secrets.compare_digest(username.encode(), AUTH_USERNAME.encode())
+    password_ok = bcrypt.checkpw(password.encode(), AUTH_PASSWORD_HASH.encode())
+    return user_ok and password_ok
+
+
+@app.middleware("http")
+async def require_login(request: Request, call_next):
+    if request.url.path in PUBLIC_PATHS or _valid_session(request.cookies.get(SESSION_COOKIE)):
+        return await call_next(request)
+    if request.method == "GET":
+        return RedirectResponse("/login", status_code=303)
+    return JSONResponse({"detail": "Sessão expirada, faça login de novo."}, status_code=401)
+
+
+def _login_html(error: str = "") -> str:
+    raw = _LOGIN_HTML_PATH.read_text(encoding="utf-8")
+    error_html = f'<p class="login-error">{error}</p>' if error else ""
+    return raw.replace("__ERROR__", error_html)
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    if _valid_session(request.cookies.get(SESSION_COOKIE)):
+        return RedirectResponse("/", status_code=303)
+    return HTMLResponse(content=_login_html())
+
+
+@app.post("/login")
+async def login(username: str = Form(...), password: str = Form(...)):
+    if not _check_credentials(username, password):
+        return HTMLResponse(content=_login_html("Usuário ou senha inválidos."), status_code=401)
+    token = secrets.token_hex(32)
+    with _sessions_lock:
+        _sessions[token] = time.time() + SESSION_TTL_SECONDS
+    response = RedirectResponse("/", status_code=303)
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        max_age=SESSION_TTL_SECONDS,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+    )
+    return response
+
+
+@app.get("/logout")
+async def logout(request: Request):
+    token = request.cookies.get(SESSION_COOKIE)
+    if token:
+        with _sessions_lock:
+            _sessions.pop(token, None)
+    response = RedirectResponse("/login", status_code=303)
+    response.delete_cookie(SESSION_COOKIE)
+    return response
 
 
 def _index_html() -> str:
