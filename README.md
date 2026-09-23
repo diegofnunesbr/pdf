@@ -19,10 +19,40 @@ image-to-pdf/
 │   ├── converter.py
 │   └── templates/
 │       └── index.html
+├── applications/
+│   └── argocd.image-to-pdf.yaml   # Application do Argo CD
+├── image-to-pdf.yaml              # Namespace, Deployment, Service, Ingress
+├── build.sh                       # builda a imagem e importa no containerd do k0s
 ├── Dockerfile
 ├── requirements.txt
 └── README.md
 ```
+
+## Rodando no cluster (homelab)
+
+Pré-requisitos: ArgoCD, `ingress-nginx` e `cert-manager` instalados
+(repositórios de mesmo nome) e DNS `image-to-pdf.diegofnunesbr.com`
+apontando pro node (repositório `dns`).
+
+Na `vm-ubuntu` (é lá que o `docker build` e o `k0s ctr` precisam rodar):
+
+```bash
+git clone https://github.com/diegofnunesbr/image-to-pdf.git
+cd image-to-pdf
+./build.sh
+kubectl apply -f applications/argocd.image-to-pdf.yaml
+```
+
+Acesse `https://image-to-pdf.diegofnunesbr.com`. O `Ingress` já libera
+upload de até 100 MB (`proxy-body-size`), igual ao `MAX_TOTAL_MB` padrão -
+se mudar um, mude o outro.
+
+**Lembrete:** a Application aponta pro GitHub, não pro clone local -
+mudança em `image-to-pdf.yaml` só tem efeito depois de `git push`. Imagem
+nova (mesma tag `local`) não é detectada pelo Argo CD: depois do
+`./build.sh`, rode `kubectl -n image-to-pdf rollout restart deployment/image-to-pdf`.
+
+## Rodando fora do cluster
 
 Acesse: http://localhost:8000
 

@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: image-to-pdf
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/diegofnunesbr/image-to-pdf.git
+    targetRevision: main
+    path: .
+    directory:
+      include: image-to-pdf.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: image-to-pdf
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
