@@ -62,7 +62,8 @@ tag `local`) não é detectada pelo Argo CD: depois do `./build.sh`, rode
 Usuário e hash bcrypt da senha ficam em `k8s/pdf-auth-secrets.sealed.yaml`,
 aplicado pelo Argo CD. Pra definir (primeira vez, ou num cluster novo com
 outra chave do Sealed Secrets) ou trocar a senha, rode do seu clone
-(precisa de `htpasswd`, `kubeseal` e `ssh` pra `vm-ubuntu`):
+(precisa de `htpasswd`, `kubeseal` e do contexto `k0s`, ver README do
+repositório `argocd`, seção "Acessar o cluster de fora da VM"):
 
 ```bash
 ./change-password.sh
