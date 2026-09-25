@@ -51,6 +51,9 @@ SESSION_COOKIE = "pdf_session"
 SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
 PUBLIC_PATHS = {"/health", "/login", "/favicon.ico"}
 
+TRUST_PROXY_HEADER = os.environ.get("TRUST_PROXY_HEADER", "")
+PROXY_LOGOUT_URL = os.environ.get("PROXY_LOGOUT_URL", "")
+
 _sessions: dict[str, float] = {}
 _sessions_lock = threading.Lock()
 
@@ -74,9 +77,17 @@ def _check_credentials(username: str, password: str) -> bool:
     return user_ok and password_ok
 
 
+def _proxy_authenticated(request: Request) -> bool:
+    return bool(TRUST_PROXY_HEADER and request.headers.get(TRUST_PROXY_HEADER))
+
+
 @app.middleware("http")
 async def require_login(request: Request, call_next):
-    if request.url.path in PUBLIC_PATHS or _valid_session(request.cookies.get(SESSION_COOKIE)):
+    if (
+        request.url.path in PUBLIC_PATHS
+        or _proxy_authenticated(request)
+        or _valid_session(request.cookies.get(SESSION_COOKIE))
+    ):
         return await call_next(request)
     if request.method == "GET":
         return RedirectResponse("/login", status_code=303)
@@ -91,7 +102,7 @@ def _login_html(error: str = "") -> str:
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    if _valid_session(request.cookies.get(SESSION_COOKIE)):
+    if _proxy_authenticated(request) or _valid_session(request.cookies.get(SESSION_COOKIE)):
         return RedirectResponse("/", status_code=303)
     return HTMLResponse(content=_login_html())
 
@@ -121,7 +132,10 @@ async def logout(request: Request):
     if token:
         with _sessions_lock:
             _sessions.pop(token, None)
-    response = RedirectResponse("/login", status_code=303)
+    if _proxy_authenticated(request) and PROXY_LOGOUT_URL:
+        response = RedirectResponse(PROXY_LOGOUT_URL, status_code=303)
+    else:
+        response = RedirectResponse("/login", status_code=303)
     response.delete_cookie(SESSION_COOKIE)
     return response
 

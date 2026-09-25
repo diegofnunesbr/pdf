@@ -9,7 +9,8 @@ Aplicação web para converter imagens em PDF, com suporte a:
   (com o nome original da imagem)
 - limite de 10 MB por imagem e 100 MB no total
 
-Acesso protegido por login (usuário e senha), mesma tela do `ia`, sem TOTP.
+Acesso protegido por login via Keycloak (SSO); usuário e senha locais
+(mesma tela do `ia`, sem TOTP) continuam como plano B.
 
 ## Estrutura do repositório
 
@@ -25,9 +26,10 @@ pdf/
 │   └── argocd.pdf.yaml            # Application do Argo CD
 ├── k8s/
 │   ├── pdf.yaml                   # Namespace, Deployment, Service, Ingress
-│   └── pdf-auth-secrets.sealed.yaml  # usuário + hash da senha (selado)
+│   ├── pdf-auth-secrets.sealed.yaml  # usuário + hash da senha local (selado, fallback)
+│   └── pdf-oidc.sealed.yaml       # client secret + cookie secret do oauth2-proxy (selado)
 ├── build.sh                       # builda a imagem e importa no containerd do k0s
-├── change-password.sh             # define/troca o usuário e a senha de login
+├── change-password.sh             # define/troca o usuário e a senha de login local
 ├── Dockerfile
 ├── requirements.txt
 └── README.md
@@ -57,13 +59,34 @@ mudança em `k8s/` só tem efeito depois de `git push`. Imagem nova (mesma
 tag `local`) não é detectada pelo Argo CD: depois do `./build.sh`, rode
 `kubectl -n pdf rollout restart deployment/pdf`.
 
-## Login
+## Login pelo Keycloak (SSO)
+
+Um sidecar [`oauth2-proxy`](https://oauth2-proxy.github.io/oauth2-proxy/)
+autentica contra o realm `home` do Keycloak (repositório `keycloak`,
+`https://keycloak.diegofnunesbr.com`) antes de qualquer requisição chegar
+no app - mesmo padrão do repositório `rundeck`. Só quem estiver no grupo
+`pdf-users` do Keycloak entra (`--allowed-group`).
+
+Como o `pdf` tem login próprio (usuário/senha, ver seção abaixo), em vez
+de empilhar os dois logins o `app/main.py` foi ajustado pra confiar no
+usuário já autenticado pelo proxy: quando a requisição chega com o header
+`X-Forwarded-Preferred-Username` (só o oauth2-proxy pode setar esse
+header - ele fala com o app em `127.0.0.1`, não exposto por fora do pod),
+a tela de login local nem aparece. "Sair" nesse caso também derruba a
+sessão no Keycloak (`PROXY_LOGOUT_URL`), não só a sessão local.
+
+Pra dar acesso a alguém: no Keycloak, realm `home`, coloque o usuário no
+grupo `pdf-users`.
+
+## Login local (plano B)
 
 Usuário e hash bcrypt da senha ficam em `k8s/pdf-auth-secrets.sealed.yaml`,
-aplicado pelo Argo CD. Pra definir (primeira vez, ou num cluster novo com
-outra chave do Sealed Secrets) ou trocar a senha, rode do seu clone
-(precisa de `htpasswd`, `kubeseal` e do contexto `k0s`, ver README do
-repositório `argocd`, seção "Acessar o cluster de fora da VM"):
+aplicado pelo Argo CD. Só é usado se o Keycloak cair (acesso via a porta
+`8000` direta da Service, sem passar pelo oauth2-proxy - não exposta pelo
+Ingress). Pra definir (primeira vez, ou num cluster novo com outra chave
+do Sealed Secrets) ou trocar a senha, rode do seu clone (precisa de
+`htpasswd`, `kubeseal` e do contexto `k0s`, ver README do repositório
+`argocd`, seção "Acessar o cluster de fora da VM"):
 
 ```bash
 ./change-password.sh
@@ -71,7 +94,7 @@ repositório `argocd`, seção "Acessar o cluster de fora da VM"):
 
 Pede usuário e senha (sem ecoar), sela, faz commit + push, espera o Argo CD
 sincronizar e reinicia o pod. A sessão dura 30 dias; reiniciar o pod
-desloga (as sessões ficam em memória). Link "Sair" no canto do cabeçalho.
+desloga (as sessões ficam em memória).
 
 ## Rodando fora do cluster
 
