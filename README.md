@@ -96,6 +96,22 @@ Pede usuário e senha (sem ecoar), sela, faz commit + push, espera o Argo CD
 sincronizar e reinicia o pod. A sessão dura 30 dias; reiniciar o pod
 desloga (as sessões ficam em memória).
 
+## Observabilidade (OpenTelemetry)
+
+A imagem roda o app com `opentelemetry-instrument` (instrumentação
+automática do OpenTelemetry pra Python, sem mudar o código): cada
+requisição vira um trace, com os tempos de cada etapa. No cluster,
+`k8s/pdf.yaml` liga a telemetria e manda tudo pro Alloy
+(`http://alloy.alloy.svc:4318`, repositório `alloy`), que repassa os
+traces pro Tempo e as métricas pro Mimir. No Grafana: `Explore` →
+`Tempo` → `service.name = pdf`.
+
+A imagem vem com `OTEL_SDK_DISABLED=true`, então rodando fora do cluster
+(`docker run`, seção abaixo) a telemetria fica desligada e nada tenta
+conectar num Alloy que não existe. `OTEL_PYTHON_LOG_CORRELATION` coloca
+o `trace_id` em cada linha de log, e o Grafana usa isso pra ligar o log
+ao trace.
+
 ## Rodando fora do cluster
 
 O app não sobe sem `AUTH_USERNAME` e `AUTH_PASSWORD_HASH`. Gere um hash
