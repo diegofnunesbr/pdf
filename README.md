@@ -62,7 +62,7 @@ tag `local`) não é detectada pelo Argo CD: depois do `./build.sh`, rode
 ## Login pelo Keycloak (SSO)
 
 Um sidecar [`oauth2-proxy`](https://oauth2-proxy.github.io/oauth2-proxy/)
-autentica contra o realm `home` do Keycloak (repositório `keycloak`,
+autentica contra o realm `homelab` do Keycloak (repositório `keycloak`,
 `https://keycloak.diegofnunesbr.com`) antes de qualquer requisição chegar
 no app - mesmo padrão do repositório `rundeck`. Só quem estiver no grupo
 `pdf-users` do Keycloak entra (`--allowed-group`).
@@ -75,7 +75,7 @@ header - ele fala com o app em `127.0.0.1`, não exposto por fora do pod),
 a tela de login local nem aparece. "Sair" nesse caso também derruba a
 sessão no Keycloak (`PROXY_LOGOUT_URL`), não só a sessão local.
 
-Pra dar acesso a alguém: no Keycloak, realm `home`, coloque o usuário no
+Pra dar acesso a alguém: no Keycloak, realm `homelab`, coloque o usuário no
 grupo `pdf-users`.
 
 ## Login local (plano B)
